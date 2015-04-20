@@ -12,20 +12,33 @@ public partial class Test_Default3 : System.Web.UI.Page
 
     protected void Page_Load(object sender, EventArgs e)
     {
+        Dictionary<string, string> QueryString = new Dictionary<string, string>();
         if (!IsPostBack)
         {
+            if (!string.IsNullOrEmpty(Request["Number"]))
+            {
+                Number.Text = Request["Number"].ToString();
+                QueryString.Add("Number", Request["Number"].ToString());
+            }
+            if (!string.IsNullOrEmpty(Request["Branch"]))
+            {
+                Branch.Text = Request["Branch"].ToString();
+                QueryString.Add("Branch", Request["Branch"].ToString());
+            }
             if (string.IsNullOrEmpty(Request["page"]) || !int.TryParse(Request["page"].ToString(), out pagenumber) || pagenumber < 1)
                 pagenumber = 1;
             ucPagination.CPage = pagenumber;
-            string number = string.IsNullOrEmpty(Request["Number"]) ? string.Empty : Request["Number"].ToString();
-            string branch = string.IsNullOrEmpty(Request["Branch"]) ? string.Empty : Request["Branch"].ToString();
 
-            Query(pagenumber, number, branch);
+            Query(pagenumber, QueryString);
         }
         else
         {
             ucPagination.CPage = 1;
-            Query(1, Number.Text.Trim(), Branch.Text.Trim());
+            if (!Number.Text.Trim().Equals(string.Empty))
+                QueryString.Add("Number", Number.Text.Trim());
+            if (!Branch.Text.Trim().Equals(string.Empty))
+                QueryString.Add("Branch", Branch.Text.Trim());
+            Query(1, QueryString);
         }
     }
 
@@ -34,6 +47,7 @@ public partial class Test_Default3 : System.Web.UI.Page
     /// </summary>
     /// <param name="sqlstr">查詢字串</param>
     /// <param name="para">條件參數</param>
+    /// <param name="pagenumber">目前頁數</param>
     private void SetEndPage(string sqlstr, SqlParameter[] para, int pagenumber)
     {
         using (SqlDataReader dr = (para == null ? SQLDB.ExecuteReader(env, "ePro", sqlstr) : SQLDB.ExecuteReader(env, "ePro", sqlstr, para)))
@@ -48,20 +62,18 @@ public partial class Test_Default3 : System.Web.UI.Page
     }
 
     /// <summary>
-    ///
+    /// 
     /// </summary>
-    /// <param name="pagenumber">當前分頁</param>
-    /// <param name="Number"></param>
-    /// <param name="Branch"></param>
-    private void Query(int pagenumber, string Number, string Branch)
+    /// <param name="pagenumber">第幾頁</param>
+    /// <param name="QueryString">網址的參數</param>
+    private void Query(int pagenumber, Dictionary<string, string> QueryString)
     {
         string sqlstr = null;
         List<SqlParameter> para = null;
         List<SqlParameter> CountPara = null;
         string connstr = SQLDB.getConnectionString(DBPublic.getEnvironmentDB(), "ePro");
-        Dictionary<string, string> ConditionList = new Dictionary<string, string>();
 
-        if (!string.IsNullOrEmpty(Number) || !string.IsNullOrEmpty(Branch))
+        if (QueryString.ContainsKey("Number") || QueryString.ContainsKey("Branch"))
         {
             int i = 0;
             para = new List<SqlParameter>();
@@ -73,32 +85,29 @@ public partial class Test_Default3 : System.Web.UI.Page
 		                                            where B02006='北區' and B02002 is not null 
                                                     and ", 10 * pagenumber);
 
+            //這是用來計算頁數的sql
             string CountSqlStr = string.Format(@"SELECT count(*) FROM B02 
 		                                         where B02006='北區' and B02002 is not null and ");
 
-            if (!string.IsNullOrEmpty(Number))
+            if (QueryString.ContainsKey("Number"))
             {
-                ConditionList.Add("Number", Number);
-
-                sqlstr += " B02002 = @B02002 " + (!string.IsNullOrEmpty(Branch) ? " and " : string.Empty);
+                sqlstr += " B02002 = @B02002 " + (QueryString.ContainsKey("Branch") ? " and " : string.Empty);
                 para.Add(new SqlParameter("@B02002", SqlDbType.VarChar, 10));
-                para[i].Value = Number;
+                para[i].Value = QueryString["Number"];
 
-                CountSqlStr += " B02002 = @B02002 " + (!string.IsNullOrEmpty(Branch) ? " and " : string.Empty);
+                CountSqlStr += " B02002 = @B02002 " + (QueryString.ContainsKey("Branch") ? " and " : string.Empty);
                 CountPara.Add(new SqlParameter("@B02002", SqlDbType.VarChar, 10));
-                CountPara[i++].Value = Number;
+                CountPara[i++].Value = QueryString["Number"];
             }
-            if (!string.IsNullOrEmpty(Branch))
+            if (QueryString.ContainsKey("Branch"))
             {
-                ConditionList.Add("Branch", Branch);
-
                 sqlstr += " B02003 like @B02003 ";
                 para.Add(new SqlParameter("@B02003", SqlDbType.VarChar, 60));
-                para[i].Value = Branch + "%";
+                para[i].Value = QueryString["Branch"] + "%";
 
                 CountSqlStr += " B02003 like @B02003 ";
                 CountPara.Add(new SqlParameter("@B02003", SqlDbType.VarChar, 60));
-                CountPara[i].Value = Branch + "%";
+                CountPara[i].Value = QueryString["Branch"] + "%";
             }
             sqlstr += @"ORDER BY B02002 ASC
 	                    )inside
@@ -106,7 +115,7 @@ public partial class Test_Default3 : System.Web.UI.Page
                     )outside ORDER BY outside.B02002 ASC";
 
             ucPagination.CPage = pagenumber;
-            ucPagination.CList = ConditionList;
+            ucPagination.CList = QueryString;
 
             SetEndPage(CountSqlStr, CountPara.ToArray() as SqlParameter[], pagenumber);
         }
@@ -129,7 +138,7 @@ public partial class Test_Default3 : System.Web.UI.Page
             conn.Open();
             using (SqlCommand cmd = new SqlCommand(sqlstr, conn))
             {
-                if (!string.IsNullOrEmpty(Number) || !string.IsNullOrEmpty(Branch))
+                if (QueryString.ContainsKey("Number") || QueryString.ContainsKey("Branch"))
                     cmd.Parameters.AddRange(para.ToArray() as SqlParameter[]);
 
                 using (SqlDataReader dr = cmd.ExecuteReader())
